@@ -826,15 +826,31 @@ with tab4:
     sc2.metric("Simulated Accuracy", f"{s_acc*100:.2f}%")
     sc3.metric("Simulated Precision", f"{s_prec*100:.2f}%")
     sc4.metric("Simulated Recall", f"{s_rec*100:.2f}%")
-    sc5.metric("Simulated F1", f"{s_f1*100:.2f}%")
     st.caption(f"Counts at Threshold {sim_t:.2f}: TP={s_tp:,}, FP={s_fp:,}, TN={s_tn:,}, FN={s_fn:,}")
+
+    st.markdown("")
+
+    # Multi-Model Benchmark Leaderboard
+    st.markdown("""
+    <div class="panel-card">
+        <h3>Multi-Model Training Benchmark & Leaderboard</h3>
+        <p>Comparative 5-fold cross-validation performance across four distinct machine learning architectures trained on the patient cohort.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    b_df = m_res["benchmark_df"].copy()
+    b_df["Accuracy"] = b_df["Accuracy"].map("{:.2%}".format)
+    b_df["ROC-AUC"] = b_df["ROC-AUC"].map("{:.4f}".format)
+    b_df["F1-Score"] = b_df["F1-Score"].map("{:.4f}".format)
+    b_df["Std Dev"] = b_df["Std Dev"].map("± {:.2%}".format)
+    st.dataframe(b_df, use_container_width=True, hide_index=True)
 
     st.markdown("")
 
     # Per-Fold Table
     st.markdown("""
     <div class="panel-card">
-        <h3>5-Fold Cross-Validation Breakdown</h3>
+        <h3>Primary Model 5-Fold Cross-Validation Breakdown</h3>
     </div>
     """, unsafe_allow_html=True)
     p_df = m_res["per_fold_df"].copy()
@@ -924,6 +940,12 @@ with tab5:
             in_comorb = st.number_input("Comorbidity Score", min_value=0, max_value=10, value=2, step=1)
 
         in_disch = st.selectbox("Discharge Destination", sorted(train_clean["discharge_to"].unique()))
+        in_model = st.selectbox(
+            "Trained Model Engine",
+            list(pipeline["model"]["all_models"].keys()),
+            index=0,
+            help="Select which trained algorithm provides the ML probability signal."
+        )
 
         st.markdown("")
         submitted = st.form_submit_button("Assess Readmission Risk")
@@ -941,7 +963,8 @@ with tab5:
         p_enc = pd.get_dummies(patient_row, columns=CATEGORICAL_COLS, drop_first=False)
         p_enc = p_enc.reindex(columns=pipeline["processed"]["feature_names"], fill_value=0).astype(float)
         p_enc[NUMERICAL_COLS] = pipeline["processed"]["scaler"].transform(p_enc[NUMERICAL_COLS])
-        raw_prob = pipeline["model"]["model"].predict_proba(p_enc)[0][1]
+        selected_clf = pipeline["model"]["all_models"][in_model]
+        raw_prob = selected_clf.predict_proba(p_enc)[0][1]
 
         # Calibrated Continuous Logistic Formulation
         z0 = -1.463
