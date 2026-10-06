@@ -15,6 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import seaborn as sns
+from sklearn.metrics import confusion_matrix
 
 # ── Local module imports ────────────────────────────────────────────
 from src.preprocessing import (
