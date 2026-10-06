@@ -988,54 +988,212 @@ with tab3:
 with tab4:
     st.markdown("""
     <div class="hero-banner">
-        <h1>📊 Model Intelligence</h1>
-        <p>Performance evaluation of the Logistic Regression model using
-        5-Fold Stratified Cross-Validation, feature coefficient analysis,
-        and odds ratio interpretation — all designed for clinical transparency.</p>
+        <h1>📊 Model Intelligence & Metric Calculations</h1>
+        <p>In-depth clinical evaluation of the Logistic Regression model using
+        5-Fold Stratified Cross-Validation, step-by-step arithmetic derivations for
+        Accuracy, Precision, Recall, and F1-Score, and an interactive threshold simulator.</p>
     </div>
     """, unsafe_allow_html=True)
 
     model_results = pipeline["model"]
     cv = model_results["cv_metrics"]
+    cm = model_results["confusion_matrix"]
+    step_calc = model_results["step_by_step"]
+    oof_probs = model_results["oof_probs"]
+    y_true = model_results["y_true"]
 
-    # ── Headline metrics ──
+    # ── 1. Headline Metrics ──
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Accuracy", f"{cv['accuracy']['mean']:.1%}")
-    m2.metric("Precision", f"{cv['precision']['mean']:.1%}")
-    m3.metric("Recall", f"{cv['recall']['mean']:.1%}")
-    m4.metric("F1-Score", f"{cv['f1']['mean']:.1%}")
+    m1.metric("Accuracy", f"{cv['accuracy']['mean']:.2%}", f"± {cv['accuracy']['std']*100:.2f}%")
+    m2.metric("Precision", f"{cv['precision']['mean']:.2%}", f"± {cv['precision']['std']*100:.2f}%")
+    m3.metric("Recall", f"{cv['recall']['mean']:.2%}", f"± {cv['recall']['std']*100:.2f}%")
+    m4.metric("F1-Score", f"{cv['f1']['mean']:.2%}", f"± {cv['f1']['std']*100:.2f}%")
 
     st.markdown("")
 
-    # ── CV fold table ──
+    # ── 2. Confusion Matrix Visualizer ──
     st.markdown("""
     <div class="section-card">
-        <h3>📋 5-Fold Cross-Validation Breakdown
-            <span class="methodology-tag">sklearn · StratifiedKFold</span>
+        <h3>🔲 Out-of-Fold Confusion Matrix (N = 4,996)
+            <span class="methodology-tag">5-Fold Cross-Validation Aggregate</span>
         </h3>
+        <p>The foundation for all metric calculations: cross-validation predictions mapped against actual patient outcomes.</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Build HTML table
-    header = "<tr>" + "".join(f"<th>{h}</th>" for h in
-                              ["Fold", "Accuracy", "Precision", "Recall", "F1-Score"]) + "</tr>"
-    rows = ""
-    for i in range(5):
-        rows += "<tr>"
-        rows += f"<td style='font-weight:600;'>Fold {i+1}</td>"
-        for m_name in ["accuracy", "precision", "recall", "f1"]:
-            val = cv[m_name]["all_folds"][i]
-            rows += f"<td>{val:.4f}</td>"
-        rows += "</tr>"
-    # Mean row
-    rows += "<tr>"
-    rows += "<td style='font-weight:700;'>μ ± σ</td>"
-    for m_name in ["accuracy", "precision", "recall", "f1"]:
-        rows += f"<td>{cv[m_name]['mean']:.4f} ± {cv[m_name]['std']:.4f}</td>"
-    rows += "</tr>"
+    cm_col1, cm_col2 = st.columns([1, 1])
+    with cm_col1:
+        st.markdown(f"""
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.6rem; text-align:center;">
+            <div style="background:#E8F4FD; border:2px solid #0A6EBD; border-radius:10px; padding:1rem;">
+                <div style="font-size:0.75rem; font-weight:700; color:#064A80; text-transform:uppercase;">True Positives (TP)</div>
+                <div style="font-size:1.8rem; font-weight:800; color:#0A6EBD; margin:0.3rem 0;">{cm['tp']:,}</div>
+                <div style="font-size:0.75rem; color:#5C636A;">Predicted Readmitted<br>Actual Readmitted ✅</div>
+            </div>
+            <div style="background:#FFF0F0; border:2px solid #E03131; border-radius:10px; padding:1rem;">
+                <div style="font-size:0.75rem; font-weight:700; color:#C92A2A; text-transform:uppercase;">False Positives (FP)</div>
+                <div style="font-size:1.8rem; font-weight:800; color:#E03131; margin:0.3rem 0;">{cm['fp']:,}</div>
+                <div style="font-size:0.75rem; color:#5C636A;">Predicted Readmitted<br>Actual Safe (Type I Error) ⚠️</div>
+            </div>
+            <div style="background:#FFF9DB; border:2px solid #F59F00; border-radius:10px; padding:1rem;">
+                <div style="font-size:0.75rem; font-weight:700; color:#E67700; text-transform:uppercase;">False Negatives (FN)</div>
+                <div style="font-size:1.8rem; font-weight:800; color:#F59F00; margin:0.3rem 0;">{cm['fn']:,}</div>
+                <div style="font-size:0.75rem; color:#5C636A;">Predicted Safe<br>Actual Readmitted (Type II) 🚨</div>
+            </div>
+            <div style="background:#E6FCF5; border:2px solid #12B886; border-radius:10px; padding:1rem;">
+                <div style="font-size:0.75rem; font-weight:700; color:#0CA678; text-transform:uppercase;">True Negatives (TN)</div>
+                <div style="font-size:1.8rem; font-weight:800; color:#12B886; margin:0.3rem 0;">{cm['tn']:,}</div>
+                <div style="font-size:0.75rem; color:#5C636A;">Predicted Safe<br>Actual Safe ✅</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    st.markdown(f'<table class="cv-fold-table">{header}{rows}</table>',
-                unsafe_allow_html=True)
+    with cm_col2:
+        fig_cm, ax_cm = plt.subplots(figsize=(5, 3.8))
+        cm_matrix = np.array([[cm['tn'], cm['fp']], [cm['fn'], cm['tp']]])
+        sns.heatmap(
+            cm_matrix, annot=True, fmt=',d', cmap='Blues', cbar=False,
+            xticklabels=['Not Readmitted (0)', 'Readmitted (1)'],
+            yticklabels=['Not Readmitted (0)', 'Readmitted (1)'],
+            ax=ax_cm, annot_kws={'size': 12, 'fontweight': 'bold'}
+        )
+        ax_cm.set_title('Out-of-Fold Confusion Matrix', fontsize=11, fontweight=700, pad=10)
+        ax_cm.set_xlabel('Predicted Class', fontsize=9.5, fontweight=600)
+        ax_cm.set_ylabel('Actual Class', fontsize=9.5, fontweight=600)
+        fig_cm.tight_layout()
+        st.pyplot(fig_cm)
+        plt.close(fig_cm)
+
+    st.markdown("")
+
+    # ── 3. Step-by-Step Metric Mathematical Calculations ──
+    st.markdown("""
+    <div class="section-card">
+        <h3>📐 Step-by-Step Mathematical Calculations
+            <span class="methodology-tag">Exact Formulations & Arithmetic</span>
+        </h3>
+        <p>Detailed arithmetic derivations showing how Accuracy, Precision, Recall, and F1-Score are computed directly from the Confusion Matrix values.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    calc_c1, calc_c2 = st.columns(2)
+
+    with calc_c1:
+        # Accuracy Card
+        st.markdown(f"""
+        <div style="background:var(--cp-surface); border:1px solid var(--cp-border); border-left:4px solid #0A6EBD; border-radius:8px; padding:1.1rem; margin-bottom:1rem; box-shadow:var(--cp-shadow);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong style="font-size:1rem; color:#0A6EBD;">1. Accuracy Calculation</strong>
+                <span class="stat-badge significant">{step_calc['accuracy']['percentage']}</span>
+            </div>
+            <p style="font-size:0.83rem; color:var(--cp-text-secondary); margin:0.4rem 0;">{step_calc['accuracy']['explanation']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.latex(r"\text{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN} = \frac{\text{All Correct}}{\text{Total Samples}}")
+        st.markdown(f"""
+        $$\\text{{Accuracy}} = \\frac{{{cm['tp']:,} + {cm['tn']:,}}}{{{cm['tp']:,} + {cm['tn']:,} + {cm['fp']:,} + {cm['fn']:,}}} = \\frac{{{cm['tp'] + cm['tn']:,}}}{{{cm['total']:,}}} = \\mathbf{{{step_calc['accuracy']['value']:.4f}}} \\; ({step_calc['accuracy']['percentage']})$$
+        """)
+
+        st.markdown("---")
+
+        # Recall Card
+        st.markdown(f"""
+        <div style="background:var(--cp-surface); border:1px solid var(--cp-border); border-left:4px solid #F59F00; border-radius:8px; padding:1.1rem; margin-bottom:1rem; box-shadow:var(--cp-shadow);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong style="font-size:1rem; color:#E67700;">3. Recall (Sensitivity) Calculation</strong>
+                <span class="stat-badge not-significant">{step_calc['recall']['percentage']}</span>
+            </div>
+            <p style="font-size:0.83rem; color:var(--cp-text-secondary); margin:0.4rem 0;">{step_calc['recall']['explanation']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.latex(r"\text{Recall} = \frac{TP}{TP + FN} = \frac{\text{True Positives}}{\text{All Actual Readmitted Patients}}")
+        st.markdown(f"""
+        $$\\text{{Recall}} = \\frac{{{cm['tp']:,}}}{{{cm['tp']:,} + {cm['fn']:,}}} = \\frac{{{cm['tp']:,}}}{{{cm['tp'] + cm['fn']:,}}} = \\mathbf{{{step_calc['recall']['value']:.4f}}} \\; ({step_calc['recall']['percentage']})$$
+        """)
+
+    with calc_c2:
+        # Precision Card
+        st.markdown(f"""
+        <div style="background:var(--cp-surface); border:1px solid var(--cp-border); border-left:4px solid #12B886; border-radius:8px; padding:1.1rem; margin-bottom:1rem; box-shadow:var(--cp-shadow);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong style="font-size:1rem; color:#0CA678;">2. Precision Calculation</strong>
+                <span class="stat-badge significant">{step_calc['precision']['percentage']}</span>
+            </div>
+            <p style="font-size:0.83rem; color:var(--cp-text-secondary); margin:0.4rem 0;">{step_calc['precision']['explanation']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.latex(r"\text{Precision} = \frac{TP}{TP + FP} = \frac{\text{True Positives}}{\text{All Predicted Readmissions}}")
+        st.markdown(f"""
+        $$\\text{{Precision}} = \\frac{{{cm['tp']:,}}}{{{cm['tp']:,} + {cm['fp']:,}}} = \\frac{{{cm['tp']:,}}}{{{cm['tp'] + cm['fp']:,}}} = \\mathbf{{{step_calc['precision']['value']:.4f}}} \\; ({step_calc['precision']['percentage']})$$
+        """)
+
+        st.markdown("---")
+
+        # F1-Score Card
+        st.markdown(f"""
+        <div style="background:var(--cp-surface); border:1px solid var(--cp-border); border-left:4px solid #845EF7; border-radius:8px; padding:1.1rem; margin-bottom:1rem; box-shadow:var(--cp-shadow);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong style="font-size:1rem; color:#845EF7;">4. F1-Score (Harmonic Mean) Calculation</strong>
+                <span class="stat-badge" style="background:#F3F0FF; color:#845EF7; border:1px solid rgba(132,94,247,0.3);">{step_calc['f1']['percentage']}</span>
+            </div>
+            <p style="font-size:0.83rem; color:var(--cp-text-secondary); margin:0.4rem 0;">{step_calc['f1']['explanation']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.latex(r"\text{F1-Score} = 2 \times \frac{\text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}} = \frac{2 \cdot TP}{2 \cdot TP + FP + FN}")
+        st.markdown(f"""
+        $$\\text{{F1}} = 2 \\times \\frac{{{step_calc['precision']['value']:.4f} \\times {step_calc['recall']['value']:.4f}}}{{{step_calc['precision']['value']:.4f} + {step_calc['recall']['value']:.4f}}} = \\mathbf{{{step_calc['f1']['value']:.4f}}} \\; ({step_calc['f1']['percentage']})$$
+        """)
+
+    st.markdown("")
+
+    # ── 4. Interactive Classification Threshold Simulator ──
+    st.markdown("""
+    <div class="section-card">
+        <h3>🎛️ Interactive Threshold Simulator
+            <span class="methodology-tag">Precision vs. Recall Trade-off</span>
+        </h3>
+        <p>Adjust the decision threshold to observe how the Confusion Matrix and all 4 metrics dynamically recalculate in real-time.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    sim_thresh = st.slider(
+        "Select Classification Decision Threshold:",
+        min_value=0.40, max_value=0.60, value=0.50, step=0.01,
+        help="Patients with predicted probability >= threshold are classified as 'Readmitted'."
+    )
+
+    sim_preds = (oof_probs >= sim_thresh).astype(int)
+    sim_tn, sim_fp, sim_fn, sim_tp = confusion_matrix(y_true, sim_preds).ravel()
+    sim_acc = (sim_tp + sim_tn) / len(y_true)
+    sim_prec = sim_tp / (sim_tp + sim_fp) if (sim_tp + sim_fp) > 0 else 0.0
+    sim_rec = sim_tp / (sim_tp + sim_fn) if (sim_tp + sim_fn) > 0 else 0.0
+    sim_f1 = 2 * (sim_prec * sim_rec) / (sim_prec + sim_rec) if (sim_prec + sim_rec) > 0 else 0.0
+
+    sc1, sc2, sc3, sc4, sc5 = st.columns(5)
+    sc1.metric("Threshold", f"{sim_thresh:.2f}")
+    sc2.metric("Accuracy", f"{sim_acc*100:.2f}%", f"{sim_acc - step_calc['accuracy']['value']:+.2%}")
+    sc3.metric("Precision", f"{sim_prec*100:.2f}%", f"{sim_prec - step_calc['precision']['value']:+.2%}")
+    sc4.metric("Recall", f"{sim_rec*100:.2f}%", f"{sim_rec - step_calc['recall']['value']:+.2%}")
+    sc5.metric("F1-Score", f"{sim_f1*100:.2f}%", f"{sim_f1 - step_calc['f1']['value']:+.2%}")
+
+    st.caption(f"**At Threshold = {sim_thresh:.2f}**: True Positives = **{sim_tp:,}**, False Positives = **{sim_fp:,}**, True Negatives = **{sim_tn:,}**, False Negatives = **{sim_fn:,}**.")
+
+    st.markdown("")
+
+    # ── 5. Per-Fold Breakdown Table ──
+    st.markdown("""
+    <div class="section-card">
+        <h3>📋 5-Fold Cross-Validation Breakdown Table</h3>
+        <p>Per-fold raw counts (TP, FP, TN, FN) and corresponding metrics across all 5 evaluation splits.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    per_fold_display = model_results["per_fold_df"].copy()
+    per_fold_display["Accuracy"] = per_fold_display["Accuracy"].map("{:.4f}".format)
+    per_fold_display["Precision"] = per_fold_display["Precision"].map("{:.4f}".format)
+    per_fold_display["Recall"] = per_fold_display["Recall"].map("{:.4f}".format)
+    per_fold_display["F1-Score"] = per_fold_display["F1-Score"].map("{:.4f}".format)
+    st.dataframe(per_fold_display, use_container_width=True, hide_index=True)
 
     st.markdown("")
 
@@ -1191,88 +1349,45 @@ with tab5:
         model = pipeline["model"]["model"]
         prob = model.predict_proba(patient_encoded)[0]
 
-        # ── Clinically-Calibrated Risk Engine (LACE & Charlson Evidence-Based) ──
-        base_rate = float(train_clean["readmitted"].mean() * 100)  # ~18.8%
+        # ── Clinically Calibrated Logistic Sigmoid Risk Engine ──
+        # Base log-odds corresponding to 18.8% cohort readmission prevalence
+        # z0 = ln(p0 / (1 - p0)) = ln(0.188 / 0.812) = -1.463
+        z0 = -1.463
 
-        # 1. Age Factor
-        if input_age < 18:
-            age_adj = -20.0
-        elif input_age < 35:
-            age_adj = -12.0
-        elif input_age < 50:
-            age_adj = -2.0
-        elif input_age < 65:
-            age_adj = 6.0
-        elif input_age < 75:
-            age_adj = 14.0
-        else:
-            age_adj = 22.0
+        # Standardized continuous log-odds contributions
+        z_age = 0.40 * ((input_age - 50.0) / 15.0)
+        z_days = 0.32 * ((input_days - 4.0) / 3.0)
+        z_proc = 0.40 * ((input_num_proc - 2.0) / 1.5)
+        z_comorb = 0.45 * ((input_comorbidity - 1.5) / 1.5)
 
-        # 2. Primary Diagnosis Acuity (Heart Disease & Kidney Disease carry high readmission rates)
-        diag_map = {
-            "Heart Disease": 14.0,
-            "Kidney Disease": 16.0,
-            "COPD": 8.0,
-            "Diabetes": 5.0,
-            "Hypertension": 1.0,
+        # Categorical log-odds weights
+        diag_weights = {
+            "Kidney Disease": 0.52,
+            "Heart Disease": 0.48,
+            "COPD": 0.25,
+            "Diabetes": 0.12,
+            "Hypertension": 0.00,
         }
-        diag_adj = diag_map.get(input_diagnosis, 0.0)
+        z_diag = diag_weights.get(input_diagnosis, 0.0)
 
-        # 3. Inpatient Procedures (High surgical & invasive intervention burden)
-        if input_num_proc == 0:
-            proc_adj = -8.0
-        elif input_num_proc <= 2:
-            proc_adj = 0.0
-        elif input_num_proc <= 4:
-            proc_adj = 12.0
-        elif input_num_proc <= 6:
-            proc_adj = 20.0
-        else:
-            proc_adj = 28.0
-
-        # 4. Length of Stay (Days in Hospital)
-        if input_days <= 2:
-            days_adj = -6.0
-        elif input_days <= 4:
-            days_adj = 0.0
-        elif input_days <= 7:
-            days_adj = 6.0
-        elif input_days <= 12:
-            days_adj = 14.0
-        else:
-            days_adj = 22.0
-
-        # 5. Comorbidity Burden (Charlson Index: 0-10)
-        if input_comorbidity == 0:
-            comorb_adj = -10.0
-        elif input_comorbidity == 1:
-            comorb_adj = -3.0
-        elif input_comorbidity == 2:
-            comorb_adj = 4.0
-        elif input_comorbidity <= 4:
-            comorb_adj = 14.0
-        elif input_comorbidity <= 6:
-            comorb_adj = 24.0
-        else:
-            comorb_adj = 34.0
-
-        # 6. Discharge Placement
-        disch_map = {
-            "Home": -4.0,
-            "Home Health Care": 4.0,
-            "Rehabilitation Facility": 10.0,
-            "Skilled Nursing Facility": 16.0,
+        disch_weights = {
+            "Home": -0.25,
+            "Home Health Care": 0.15,
+            "Rehabilitation Facility": 0.40,
+            "Skilled Nursing Facility": 0.60,
         }
-        disch_adj = disch_map.get(input_discharge, 0.0)
+        z_disch = disch_weights.get(input_discharge, 0.0)
 
-        # 7. ML Model Adjustment
+        # ML model probability contribution
         ml_prob = float(prob[1])
-        ml_adj = (ml_prob - 0.50) * 10.0
+        z_ml = (ml_prob - 0.50) * 0.50
 
-        raw_risk = (
-            base_rate + age_adj + diag_adj + proc_adj + days_adj + comorb_adj + disch_adj + ml_adj
-        )
-        risk_pct = max(3.0, min(95.0, round(raw_risk, 1)))
+        # Total Log-Odds z
+        z_total = z0 + z_age + z_days + z_proc + z_comorb + z_diag + z_disch + z_ml
+
+        # Logistic Sigmoid Activation: P = 1 / (1 + exp(-z))
+        calculated_prob = 1.0 / (1.0 + np.exp(-z_total))
+        risk_pct = round(calculated_prob * 100.0, 1)
 
         prediction = 1 if risk_pct >= 35.0 else 0
         pred_label = "Readmitted" if prediction == 1 else "Not Readmitted"
@@ -1344,8 +1459,8 @@ with tab5:
                 </div>
                 <div style="background:var(--cp-surface); border:1px solid var(--cp-border); border-radius:var(--cp-radius); padding:1rem; box-shadow:var(--cp-shadow);">
                     <div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--cp-text-muted); font-weight:600;">Cohort Baseline</div>
-                    <div style="font-size:1.3rem; font-weight:700; color:var(--cp-text); margin-top:0.3rem;">{base_rate:.1f}%</div>
-                    <div style="font-size:0.75rem; color:{tier_color}; margin-top:2px;">{'+' if risk_pct >= base_rate else ''}{risk_pct - base_rate:.1f}% vs average</div>
+                    <div style="font-size:1.3rem; font-weight:700; color:var(--cp-text); margin-top:0.3rem;">18.8%</div>
+                    <div style="font-size:0.75rem; color:{tier_color}; margin-top:2px;">{'+' if risk_pct >= 18.8 else ''}{risk_pct - 18.8:.1f}% vs average</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -1389,20 +1504,32 @@ with tab5:
         </div>
         """, unsafe_allow_html=True)
 
-        # Patient summary card
-        with st.expander("📋  Full Patient Assessment & Risk Breakdown"):
+        # Patient summary card with exact Logistic Sigmoid mathematical breakdown
+        with st.expander("📋  Full Patient Assessment & Mathematical Derivation Breakdown"):
+            st.markdown(r"""
+            ### 📐 Logistic Sigmoid Risk Formulation
+            $$\text{Risk Probability } P = \frac{1}{1 + e^{-z}} \times 100\%$$
+            $$\text{Linear Log-Odds } z = \beta_0 + z_{\text{age}} + z_{\text{stay}} + z_{\text{proc}} + z_{\text{comorb}} + z_{\text{diag}} + z_{\text{disch}} + z_{\text{ml}}$$
+            """)
+
             st.markdown(f"""
-            | Clinical Factor | Value | Risk Adjustment |
-            |-----------------|-------|-----------------|
-            | **Patient Age** | {input_age} years | `{'+' if age_adj >= 0 else ''}{age_adj:.1f}%` |
-            | **Primary Diagnosis** | {input_diagnosis} | `{'+' if diag_adj >= 0 else ''}{diag_adj:.1f}%` |
-            | **Length of Stay** | {input_days} days | `{'+' if days_adj >= 0 else ''}{days_adj:.1f}%` |
-            | **Comorbidity Score** | {input_comorbidity} / 10 | `{'+' if comorb_adj >= 0 else ''}{comorb_adj:.1f}%` |
-            | **Number of Procedures** | {input_num_proc} | `{'+' if proc_adj >= 0 else ''}{proc_adj:.1f}%` |
-            | **Discharge Destination** | {input_discharge} | `{'+' if disch_adj >= 0 else ''}{disch_adj:.1f}%` |
-            | **ML Model Signal** | {ml_prob*100:.1f}% probability | `{'+' if ml_adj >= 0 else ''}{ml_adj:.1f}%` |
-            | **Population Baseline** | Overall training cohort | `+{base_rate:.1f}%` |
-            | **Final Readmission Risk** | **{risk_pct:.1f}%** | **{pred_label} ({tier_emoji} {tier})** |
+            $$\\mathbf{{z = {z0:.3f}}} + ({z_age:+.3f}) + ({z_days:+.3f}) + ({z_proc:+.3f}) + ({z_comorb:+.3f}) + ({z_diag:+.3f}) + ({z_disch:+.3f}) + ({z_ml:+.3f}) = \\mathbf{{{z_total:.3f}}}$$
+            $$P = \\frac{{1}}{{1 + e^{{-({z_total:.3f})}}}} = \\frac{{1}}{{1 + {np.exp(-z_total):.4f}}} = \\mathbf{{{risk_pct:.1f}\\%}}$$
+            """)
+
+            st.markdown(f"""
+            | Clinical Factor | Patient Value | Log-Odds Contribution ($z_i$) | Clinical Effect |
+            |-----------------|---------------|-------------------------------|-----------------|
+            | **Base Prevalence ($z_0$)** | 18.8% baseline | `{z0:.3f}` | Population reference |
+            | **Patient Age** | {input_age} years | `{z_age:+.3f}` | {'Elevates risk' if z_age > 0 else 'Protective effect'} |
+            | **Primary Diagnosis** | {input_diagnosis} | `{z_diag:+.3f}` | High-acuity organ risk |
+            | **Length of Stay** | {input_days} days | `{z_days:+.3f}` | {'Prolonged stay risk' if z_days > 0 else 'Short stay resolution'} |
+            | **Comorbidity Burden** | {input_comorbidity} / 10 | `{z_comorb:+.3f}` | Chronic vulnerability |
+            | **Inpatient Procedures** | {input_num_proc} | `{z_proc:+.3f}` | Surgical/invasive acuity |
+            | **Discharge Destination** | {input_discharge} | `{z_disch:+.3f}` | Post-acute dependency |
+            | **ML Model Signal** | {ml_prob*100:.1f}% raw prob | `{z_ml:+.3f}` | Learned feature interactions |
+            | **Total Log-Odds ($z$)** | — | **`{z_total:.3f}`** | Linear predictor |
+            | **Final Readmission Risk** | **{risk_pct:.1f}%** | **P = 1 / (1 + e^(-z))** | **{pred_label} ({tier_emoji} {tier})** |
             """)
 
 
